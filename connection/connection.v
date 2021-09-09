@@ -7,6 +7,8 @@ import address
 struct Connection {
 	id string
 	addr address.Address
+	pub mut:
+	     conn &net.TcpConn
 }
 
 
@@ -15,13 +17,16 @@ fn new(addr address.Address) &Connection {
 	return &Connection{
 		id: '',
 		addr: addr,
+		conn: 0,
 	} 
 }
 
 // connect handles the I/O for a connection. It will dial, configure TLS, and perform
 // initialization handshakes.
-fn (c &Connection) connect(ctx context.Context) {
-	_ := dial_tcp_context(ctx, c.addr.string())
+fn (mut c Connection) connect(ctx context.Context) {
+	conn := dial_tcp_context(ctx, c.addr.string())
+
+	c.conn = conn
 }
 
 fn dial_tcp_context(ctx context.Context, addr string) &net.TcpConn {
