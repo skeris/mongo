@@ -4,6 +4,8 @@ import context
 import net
 import address
 import sync
+import sync.stdatomic
+import time
 
 struct Connection {
 	id string
@@ -13,9 +15,11 @@ struct Connection {
 	connect_context_made chan i8
 
 	pub mut:
-	     conn &net.TcpConn
-		 cancel_connect_context context.CancelFn
-		 connect_context_mutex &sync.Mutex
+		conn &net.TcpConn
+		cancel_connect_context context.CancelFn
+		connect_context_mutex &sync.Mutex
+		idle_deadline i64
+		idle_timeout i64
 }
 
 const empty_cancel = context.CancelFn{}
@@ -32,6 +36,8 @@ fn new(addr address.Address) &Connection {
 		connect_context_made: chan i8{},
 		connect_context_mutex: mx,
 		cancel_connect_context: empty_cancel,
+		idle_deadline: 0,
+		idle_timeout: 0,
 	} 
 }
 
@@ -55,7 +61,7 @@ fn (mut c Connection) connect(mut ctx context.Context) {
 println(cancel_connect_context) 
 	c.cancel_connect_context = cancel_connect_context
 	c.connect_context_mutex.unlock()
-cancel_connect_context()
+
 	// dial_ctx := handshake_ctx
 	// dial_cancel := context.CancelFn{}
 
@@ -67,7 +73,7 @@ cancel_connect_context()
 println(handshake_ctx) 
 	defer {
 		c.connect_context_mutex.@lock()
-		mut cancel_fn := &c.cancel_connect_context
+		mut cancel_fn := c.cancel_connect_context
 		c.cancel_connect_context = empty_cancel
 		c.connect_context_mutex.unlock()
 
@@ -81,10 +87,18 @@ println(handshake_ctx)
 
 	// Assign the result of DialContext to a temporary net.Conn to ensure that c.nc is not set in an error case.
 
-	conn := dial_tcp_context(mut ctx, c.addr.string())
+	conn := dial_tcp_context(mut ctx, c.addr.string()) // todo handle error
 
 	c.conn = conn
+
+	c.bump_idle_deadline()
 	
+}
+
+fn (mut c Connection) bump_idle_deadline() {
+	if c.idle_timeout > 0 {
+		stdatomic.store_i64(&c.idle_deadline, time.now().add_seconds(int(c.idle_timeout)).unix_time())
+	}
 }
 
 fn dial_tcp_context(mut ctx context.Context, addr string) &net.TcpConn {
